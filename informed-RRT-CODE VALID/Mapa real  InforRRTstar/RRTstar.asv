@@ -1,0 +1,261 @@
+%*************************
+%Autor:SALVA
+%DATA: 2021-9-07
+%*************************
+%% informed RRT* algorithm
+tic
+clear; close all;clc;
+A=imread('22.png');
+% A=imread('1.jpg');
+% figure
+% imshow(A,[]);
+A=double(A);
+B=zeros(size(A,2),size(A,2));
+for i=1:size(A,1)
+    for j=1:size(A,2)
+        if A(i,j,1)>250 & A(i,j,2)>250 & A(i,j,2)>250
+            B(i,j)=255;
+            C(i,j)=255;
+        end
+        if abs(A(i,j,1)-A(i,j,2))<8 & abs(A(i,j,1)-A(i,j,3))<8 & abs(A(i,j,3)-A(i,j,2))<8
+            B(i,j)=255;
+            C(i,j)=255;
+        end
+    end
+end
+imBw = im2bw(B);                        %Convertir a imagen binaria
+imLabel = bwlabel(imBw);                %Etiqueta cada dominio conectado
+stats = regionprops(imLabel,'Area');    %Encuentra el tamaño de cada dominio conectado
+area = cat(1,stats.Area);
+index = find(area == max(area));        %Encuentre el índice del dominio conectado más grande
+img = ismember(imLabel,index);          %Obtenga la imagen de dominio conectado más grande
+% figure
+% imshow(img,[]);
+IMG=1-img;
+imBw = im2bw(IMG);                        %Convertir a imagen binaria
+imLabel = bwlabel(imBw);                %Etiqueta cada dominio conectado
+stats = regionprops(imLabel,'Area');    %Encuentra el tamaño de cada dominio conectado
+area = cat(1,stats.Area);
+index = find(area >200);        %Encuentre el índice del dominio conectado más grande
+img = ismember(imLabel,index);          %Obtenga la imagen de dominio conectado más grande
+img=1-img;
+se=strel('disk',2);
+img=imdilate(img,se);
+%%注意green
+% for i=1:size(A,1)
+%     for j=1:size(A,2)
+%         thgreen=10;
+%         if A(i,j,1)<91+thgreen && 91-thgreen<A(i,j,1) && ...
+%            A(i,j,2)<179+thgreen && 179-thgreen<A(i,j,2) && ...
+%            A(i,j,3)<120+thgreen && 120-thgreen<A(i,j,3)
+%             img(i,j)=0;
+%         end
+%     end
+% end
+% figure
+% imshow(img,[]);
+%
+img = 255*uint8(img);
+C=img(1:size(A,1),1:size(A,2));
+% figure
+% imshow(C,[]);
+clearvars -except img C A
+  
+ x_I=177; y_I=359;           
+ x_G=1832; y_G=856;  
+
+%  x_I=1056; y_I=228;  % distancia corta del mapa de barceloan         
+%  x_G=1627; y_G=516;
+
+Thr=40;                 
+Delta= 20;        
+%% 
+T.v(1).x = x_I;        
+T.v(1).y = y_I; 
+T.v(1).xPrev = x_I;     
+T.v(1).yPrev = y_I;
+T.v(1).dist=0;          
+T.v(1).indPrev = 0;     
+%% �
+figure;
+Imp=img;
+% imshow(Imp)
+imshow(C,[])
+title('Informed RRT* path planning');
+xL=size(Imp,1);
+yL=size(Imp,2);
+hold on
+plot(x_I, y_I, 'ro', 'MarkerSize',10, 'MarkerFaceColor','r');
+plot(x_G, y_G, 'go', 'MarkerSize',10, 'MarkerFaceColor','g');
+count=1;
+goal = [x_G,y_G];
+start_goal_dist = 100000;
+path.pos(1).x = 5000;
+path.pos(1).y = 5000;
+
+for iter = 1:100000
+    x_rand=[];
+    %%=========muestreo x_rand========%%
+    if start_goal_dist < 10000000
+        while 1
+            x_rand(1) = xL*rand; 
+            x_rand(2) = yL*rand; 
+            if new_node(x_rand(1),x_rand(2),start_goal_dist)
+                break;
+            end
+        end
+    else
+        x_rand(1) = xL*rand; 
+        x_rand(2) = yL*rand;
+    end
+    
+    %%=======buscar x_near===========%%
+    x_near=[];
+    min_dist = 1000000;
+    near_iter = 1;
+    near_iter_tmp = 1;
+    [~,N]=size(T.v);
+    for j = 1:N
+       x_near(1) = T.v(j).x;
+       x_near(2) = T.v(j).y;
+       dist = norm(x_rand - x_near);
+       if min_dist > dist
+           min_dist = dist;
+           near_iter = j;
+       end
+    end
+  
+    x_near(1) = T.v(near_iter).x;
+    x_near(2) = T.v(near_iter).y;
+    %%========Obtener x_new============%%
+    x_new=[];
+    near_to_rand = [x_rand(1)-x_near(1),x_rand(2)-x_near(2)];
+    normlized = near_to_rand / norm(near_to_rand) * Delta;
+    x_new = x_near + normlized;
+    %%=======Detección de obstáculos===============%%
+    if ~collisionChecking(x_near,x_new,Imp) 
+       continue;
+    end
+    
+    %%=======  nearC && chooseParent  =========%%
+    nearptr = [];
+    nearcount = 0;
+    neardist =  norm(x_new - x_near) + T.v(near_iter_tmp).dist;  
+    for j = 1:N
+       if j == near_iter_tmp
+           continue;
+       end
+       x_neartmp(1) = T.v(j).x;
+       x_neartmp(2) = T.v(j).y;
+       dist = norm(x_new - x_neartmp) + T.v(j).dist;
+       norm_dist = norm(x_new - x_neartmp);
+       if norm_dist < 200
+           %nearC
+           if collisionChecking(x_neartmp,x_new,Imp)
+                nearcount = nearcount + 1;
+                nearptr(nearcount,1) = j;
+                if neardist > dist 
+                    neardist = dist;
+                    near_iter = j;
+                end
+           end
+       end
+    end
+      
+    x_near(1) = T.v(near_iter).x;
+    x_near(2) = T.v(near_iter).y;
+    count=count+1;
+    %%========Agrega X_NEW al árbol========%%
+    T.v(count).x = x_new(1);
+    T.v(count).y = x_new(2); 
+    T.v(count).xPrev = x_near(1);     
+	T.v(count).yPrev = x_near(2);
+    T.v(count).dist= norm(x_new - x_near) + T.v(near_iter).dist;          
+    T.v(count).indPrev = near_iter;   
+    %%========  rewirte  =========%%
+    [M,~] = size(nearptr);
+    for k = 1:M
+        x_1(1) = T.v(nearptr(k,1)).x;
+        x_1(2) = T.v(nearptr(k,1)).y;
+        x1_prev(1) = T.v(nearptr(k,1)).xPrev;
+        x1_prev(2) = T.v(nearptr(k,1)).yPrev;
+        if T.v(nearptr(k,1)).dist >  (T.v(count).dist + norm(x_1-x_new))
+            T.v(nearptr(k,1)).dist = T.v(count).dist + norm(x_1-x_new);
+            T.v(nearptr(k,1)).xPrev = x_new(1);    
+            T.v(nearptr(k,1)).yPrev = x_new(2);
+            T.v(nearptr(k,1)).indPrev = count;
+            plot([x_1(1),x1_prev(1)],[x_1(2),x1_prev(2)],'-w');
+            hold on;
+            plot([x_1(1),x_new(1)],[x_1(2),x_new(2)],'-g');
+            hold on;
+        end
+    end
+    
+    plot([x_near(1),x_new(1)],[x_near(2),x_new(2)],'-r');
+    hold on;
+    plot(x_new(1),x_new(2),'*r');
+    hold on;
+    if norm(x_new - goal) < Thr
+        if (T.v(count).dist + norm(x_new - goal)) < start_goal_dist
+            start_goal_dist = (T.v(count).dist + norm(x_new - goal));
+            if length(path.pos) > 2
+                for j = 2 : length(path.pos)
+                    plot([path.pos(j).x; path.pos(j-1).x;], [path.pos(j).y; path.pos(j-1).y], 'w', 'Linewidth', 3);
+                end
+            end
+            path.pos = [];
+            if iter < 100000
+                path.pos(1).x = x_G; path.pos(1).y = y_G;
+                path.pos(2).x = T.v(end).x; path.pos(2).y = T.v(end).y;
+                pathIndex = T.v(end).indPrev; %��
+                j=0;
+                while 1
+                    path.pos(j+3).x = T.v(pathIndex).x;
+                    path.pos(j+3).y = T.v(pathIndex).y;
+                    pathIndex = T.v(pathIndex).indPrev;
+                    if pathIndex == 1
+                        break
+                    end
+                    j=j+1;
+                end  % 
+                path.pos(end+1).x = x_I; path.pos(end).y = y_I; %
+               f j=2:length(path.pos)
+      plot([path.pos(j).x; path.pos(j-1).x;], [path.pos(j).y; path.pos(j-1).y], 'b', 'Linewidth', 1);
+                break
+            else
+                disp('Error, no path found!');
+            end
+        end
+        continue;
+    end
+    pause(0.01); 
+end
+
+A=uint8(A);
+figure
+imshow(A,[]);
+hold on
+plot(x_I, y_I, 'ro', 'MarkerSize',10, 'MarkerFaceColor','r');
+hold on
+plot(x_G, y_G, 'go', 'MarkerSize',10, 'MarkerFaceColor','g');
+for j = 2:length(path.pos)
+    hold on
+    plot([path.pos(j).x; path.pos(j-1).x;], [path.pos(j).y; path.pos(j-1).y], 'b', 'Linewidth', 2);
+end
+title('Informed RRT* path planning');
+% legend('RRT*')
+legend('start','goal','Informed-RRTstar')
+toc
+
+% samplingnodesx=T.v.x(:,);
+% samplingnodesy=T.v.y;
+samplingnodes=[];
+pathcost=[];
+for i=1:N
+samplingnodes=[samplingnodes;[T.v(N).x,T.v(N).y]];
+pathcost=[pathcost;T.v(N).dist];
+end
+Treenodes=path.pos;
+pathlength=dist;
+Cbest=dist;
+clearvars -except samplingnodes pathcost Treenodes pathlength Cbest;
